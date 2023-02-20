@@ -21,6 +21,7 @@ import (
 )
 
 // Ensure that a bucket that gets a non-existent key returns nil.
+// 确保获取一个不存在的bucket返回nil
 func TestBucket_Get_NonExistent(t *testing.T) {
 	db := btesting.MustCreateDB(t)
 
@@ -39,6 +40,7 @@ func TestBucket_Get_NonExistent(t *testing.T) {
 }
 
 // Ensure that a bucket can read a value that is not flushed yet.
+// 确保桶里面可以读取到一个没有刷新的值
 func TestBucket_Get_FromNode(t *testing.T) {
 	db := btesting.MustCreateDB(t)
 
@@ -60,6 +62,7 @@ func TestBucket_Get_FromNode(t *testing.T) {
 }
 
 // Ensure that a bucket retrieved via Get() returns a nil.
+// 确保通过get检索桶返回nil
 func TestBucket_Get_IncompatibleValue(t *testing.T) {
 	db := btesting.MustCreateDB(t)
 	if err := db.Update(func(tx *bolt.Tx) error {

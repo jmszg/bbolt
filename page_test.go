@@ -8,6 +8,7 @@ import (
 )
 
 // Ensure that the page type can be returned in human readable format.
+// 确保page类型返回人可读的格式
 func TestPage_typ(t *testing.T) {
 	if typ := (&page{flags: branchPageFlag}).typ(); typ != "branch" {
 		t.Fatalf("exp=branch; got=%v", typ)
@@ -31,6 +32,7 @@ func TestPage_dump(t *testing.T) {
 	(&page{id: 256}).hexdump(16)
 }
 
+// 合并两个有序的pagid，合并后依然有序
 func TestPgids_merge(t *testing.T) {
 	a := pgids{4, 5, 6, 10, 11, 12, 13, 27}
 	b := pgids{1, 3, 8, 9, 25, 30}

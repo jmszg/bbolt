@@ -68,6 +68,7 @@ func TestNode_read_LeafPage(t *testing.T) {
 }
 
 // Ensure that a node can serialize into a leaf page.
+// 确保一个node可以序列化为叶子页
 func TestNode_write_LeafPage(t *testing.T) {
 	// Create a node.
 	n := &node{isLeaf: true, inodes: make(inodes, 0), bucket: &Bucket{tx: &Tx{db: &DB{}, meta: &meta{pgid: 1}}}}
@@ -100,6 +101,7 @@ func TestNode_write_LeafPage(t *testing.T) {
 }
 
 // Ensure that a node can split into appropriate subgroups.
+// 确保一个node可以分裂成适当的子组
 func TestNode_split(t *testing.T) {
 	// Create a node.
 	n := &node{inodes: make(inodes, 0), bucket: &Bucket{tx: &Tx{db: &DB{}, meta: &meta{pgid: 1}}}}
@@ -125,6 +127,7 @@ func TestNode_split(t *testing.T) {
 }
 
 // Ensure that a page with the minimum number of inodes just returns a single node.
+// 确保页小于最小值时不发生分裂
 func TestNode_split_MinKeys(t *testing.T) {
 	// Create a node.
 	n := &node{inodes: make(inodes, 0), bucket: &Bucket{tx: &Tx{db: &DB{}, meta: &meta{pgid: 1}}}}
@@ -139,6 +142,7 @@ func TestNode_split_MinKeys(t *testing.T) {
 }
 
 // Ensure that a node that has keys that all fit on a page just returns one leaf.
+// 确保所有key合适在一个页，则不分裂
 func TestNode_split_SinglePage(t *testing.T) {
 	// Create a node.
 	n := &node{inodes: make(inodes, 0), bucket: &Bucket{tx: &Tx{db: &DB{}, meta: &meta{pgid: 1}}}}

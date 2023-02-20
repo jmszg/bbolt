@@ -1,0 +1,532 @@
+@startuml
+namespace bbolt {
+    class Bucket << (S,Aquamarine) >> {
+        - tx *Tx
+        - buckets <font color=blue>map</font>[string]*Bucket
+        - page *page
+        - rootNode *node
+        - nodes <font color=blue>map</font>[pgid]*node
+
+        + FillPercent float64
+
+        - openBucket(value []byte) *Bucket
+        - forEachPage(fn <font color=blue>func</font>(*page, int, []pgid) ) 
+        - forEachPageNode(fn <font color=blue>func</font>(*page, *node, int) ) 
+        - spill() error
+        - inlineable() bool
+        - maxInlineBucketSize() uintptr
+        - write() []byte
+        - rebalance() 
+        - node(pgid pgid, parent *node) *node
+        - free() 
+        - dereference() 
+        - pageNode(id pgid) (*page, *node)
+
+        + Tx() *Tx
+        + Root() pgid
+        + Writable() bool
+        + Cursor() *Cursor
+        + Bucket(name []byte) *Bucket
+        + CreateBucket(key []byte) (*Bucket, error)
+        + CreateBucketIfNotExists(key []byte) (*Bucket, error)
+        + DeleteBucket(key []byte) error
+        + Get(key []byte) []byte
+        + Put(key []byte, value []byte) error
+        + Delete(key []byte) error
+        + Sequence() uint64
+        + SetSequence(v uint64) error
+        + NextSequence() (uint64, error)
+        + ForEach(fn <font color=blue>func</font>([]byte, []byte) error) error
+        + ForEachBucket(fn <font color=blue>func</font>([]byte) error) error
+        + Stats() BucketStats
+        + _forEachPageNode(pgid pgid, depth int, fn <font color=blue>func</font>(*page, *node, int) ) 
+
+    }
+    class BucketStats << (S,Aquamarine) >> {
+        + BranchPageN int
+        + BranchOverflowN int
+        + LeafPageN int
+        + LeafOverflowN int
+        + KeyN int
+        + Depth int
+        + BranchAlloc int
+        + BranchInuse int
+        + LeafAlloc int
+        + LeafInuse int
+        + BucketN int
+        + InlineBucketN int
+        + InlineBucketInuse int
+
+        + Add(other BucketStats) 
+
+    }
+    class Cursor << (S,Aquamarine) >> {
+        - bucket *Bucket
+        - stack []elemRef
+
+        - first() ([]byte, []byte, uint32)
+        - seek(seek []byte) ([]byte, []byte, uint32)
+        - goToFirstElementOnTheStack() 
+        - last() 
+        - next() ([]byte, []byte, uint32)
+        - prev() ([]byte, []byte, uint32)
+        - search(key []byte, pgid pgid) 
+        - searchNode(key []byte, n *node) 
+        - searchPage(key []byte, p *page) 
+        - nsearch(key []byte) 
+        - keyValue() ([]byte, []byte, uint32)
+        - node() *node
+
+        + Bucket() *Bucket
+        + First() ([]byte, []byte)
+        + Last() ([]byte, []byte)
+        + Next() ([]byte, []byte)
+        + Prev() ([]byte, []byte)
+        + Seek(seek []byte) ([]byte, []byte)
+        + Delete() error
+
+    }
+    class DB << (S,Aquamarine) >> {
+        - path string
+        - openFile <font color=blue>func</font>(string, int, os.FileMode) (*os.File, error)
+        - file *os.File
+        - dataref []byte
+        - data *[]byte
+        - datasz int
+        - filesz int
+        - meta0 *meta
+        - meta1 *meta
+        - pageSize int
+        - opened bool
+        - rwtx *Tx
+        - txs []*Tx
+        - stats Stats
+        - freelist *freelist
+        - freelistLoad sync.Once
+        - pagePool sync.Pool
+        - batchMu sync.Mutex
+        - batch *batch
+        - rwlock sync.Mutex
+        - metalock sync.Mutex
+        - mmaplock sync.RWMutex
+        - statlock sync.RWMutex
+        - ops <font color=blue>struct</font>{<font color=blue>func</font>([]byte, int64) (int, error)}
+        - readOnly bool
+
+        + StrictMode bool
+        + NoSync bool
+        + NoFreelistSync bool
+        + FreelistType FreelistType
+        + NoGrowSync bool
+        + MmapFlags int
+        + MaxBatchSize int
+        + MaxBatchDelay time.Duration
+        + AllocSize int
+        + Mlock bool
+
+        - getPageSize() (int, error)
+        - getPageSizeFromFirstMeta() (int, bool, error)
+        - getPageSizeFromSecondMeta() (int, bool, error)
+        - loadFreelist() 
+        - hasSyncedFreelist() bool
+        - mmap(minsz int) error
+        - munmap() error
+        - mmapSize(size int) (int, error)
+        - munlock(fileSize int) error
+        - mlock(fileSize int) error
+        - mrelock(fileSizeFrom int, fileSizeTo int) error
+        - init() error
+        - close() error
+        - beginTx() (*Tx, error)
+        - beginRWTx() (*Tx, error)
+        - freePages() 
+        - removeTx(tx *Tx) 
+        - page(id pgid) *page
+        - pageInBuffer(b []byte, id pgid) *page
+        - meta() *meta
+        - allocate(txid txid, count int) (*page, error)
+        - grow(sz int) error
+        - freepages() []pgid
+
+        + Path() string
+        + GoString() string
+        + String() string
+        + Close() error
+        + Begin(writable bool) (*Tx, error)
+        + Update(fn <font color=blue>func</font>(*Tx) error) error
+        + View(fn <font color=blue>func</font>(*Tx) error) error
+        + Batch(fn <font color=blue>func</font>(*Tx) error) error
+        + Sync() error
+        + Stats() Stats
+        + Info() *Info
+        + IsReadOnly() bool
+
+    }
+    class Info << (S,Aquamarine) >> {
+        + Data uintptr
+        + PageSize int
+
+    }
+    class Options << (S,Aquamarine) >> {
+        + Timeout time.Duration
+        + NoGrowSync bool
+        + NoFreelistSync bool
+        + FreelistType FreelistType
+        + ReadOnly bool
+        + MmapFlags int
+        + InitialMmapSize int
+        + PageSize int
+        + NoSync bool
+        + OpenFile <font color=blue>func</font>(string, int, os.FileMode) (*os.File, error)
+        + Mlock bool
+
+    }
+    class PageInfo << (S,Aquamarine) >> {
+        + ID int
+        + Type string
+        + Count int
+        + OverflowCount int
+
+    }
+    class Stats << (S,Aquamarine) >> {
+        + FreePageN int
+        + PendingPageN int
+        + FreeAlloc int
+        + FreelistInuse int
+        + TxN int
+        + OpenTxN int
+        + TxStats TxStats
+
+        + Sub(other *Stats) Stats
+
+    }
+    class Tx << (S,Aquamarine) >> {
+        - writable bool
+        - managed bool
+        - db *DB
+        - meta *meta
+        - root Bucket
+        - pages <font color=blue>map</font>[pgid]*page
+        - stats TxStats
+        - commitHandlers []<font color=blue>func</font>() 
+
+        + WriteFlag int
+
+        - init(db *DB) 
+        - commitFreelist() error
+        - nonPhysicalRollback() 
+        - rollback() 
+        - close() 
+        - check(ch <font color=blue>chan</font> error) 
+        - checkBucket(b *Bucket, reachable <font color=blue>map</font>[pgid]*{packageName}page, freed <font color=blue>map</font>[pgid]bool, ch <font color=blue>chan</font> error) 
+        - allocate(count int) (*page, error)
+        - write() error
+        - writeMeta() error
+        - page(id pgid) *page
+        - forEachPage(pgidnum pgid, fn <font color=blue>func</font>(*page, int, []pgid) ) 
+        - forEachPageInternal(pgidstack []pgid, fn <font color=blue>func</font>(*page, int, []pgid) ) 
+
+        + ID() int
+        + DB() *DB
+        + Size() int64
+        + Writable() bool
+        + Cursor() *Cursor
+        + Stats() TxStats
+        + Bucket(name []byte) *Bucket
+        + CreateBucket(name []byte) (*Bucket, error)
+        + CreateBucketIfNotExists(name []byte) (*Bucket, error)
+        + DeleteBucket(name []byte) error
+        + ForEach(fn <font color=blue>func</font>([]byte, *Bucket) error) error
+        + OnCommit(fn <font color=blue>func</font>() ) 
+        + Commit() error
+        + Rollback() error
+        + Copy(w io.Writer) error
+        + WriteTo(w io.Writer) (int64, error)
+        + CopyFile(path string, mode os.FileMode) error
+        + Check() <font color=blue>chan</font> error
+        + Page(id int) (*PageInfo, error)
+
+    }
+    class TxStats << (S,Aquamarine) >> {
+        + PageCount int64
+        + PageAlloc int64
+        + CursorCount int64
+        + NodeCount int64
+        + NodeDeref int64
+        + Rebalance int64
+        + RebalanceTime time.Duration
+        + Split int64
+        + Spill int64
+        + SpillTime time.Duration
+        + Write int64
+        + WriteTime time.Duration
+
+        - add(other *TxStats) 
+
+        + Sub(other *TxStats) TxStats
+        + GetPageCount() int64
+        + IncPageCount(delta int64) int64
+        + GetPageAlloc() int64
+        + IncPageAlloc(delta int64) int64
+        + GetCursorCount() int64
+        + IncCursorCount(delta int64) int64
+        + GetNodeCount() int64
+        + IncNodeCount(delta int64) int64
+        + GetNodeDeref() int64
+        + IncNodeDeref(delta int64) int64
+        + GetRebalance() int64
+        + IncRebalance(delta int64) int64
+        + GetRebalanceTime() time.Duration
+        + IncRebalanceTime(delta time.Duration) time.Duration
+        + GetSplit() int64
+        + IncSplit(delta int64) int64
+        + GetSpill() int64
+        + IncSpill(delta int64) int64
+        + GetSpillTime() time.Duration
+        + IncSpillTime(delta time.Duration) time.Duration
+        + GetWrite() int64
+        + IncWrite(delta int64) int64
+        + GetWriteTime() time.Duration
+        + IncWriteTime(delta time.Duration) time.Duration
+
+    }
+    class batch << (S,Aquamarine) >> {
+        - db *DB
+        - timer *time.Timer
+        - start sync.Once
+        - calls []call
+
+        - trigger() 
+        - run() 
+
+    }
+    class bbolt.FreelistType << (T, #FF7700) >>  {
+    }
+    class bbolt.inodes << (T, #FF7700) >>  {
+    }
+    class bbolt.nodes << (T, #FF7700) >>  {
+    }
+    class bbolt.pages << (T, #FF7700) >>  {
+    }
+    class bbolt.pgid << (T, #FF7700) >>  {
+    }
+    class bbolt.pgids << (T, #FF7700) >>  {
+    }
+    class bbolt.pidSet << (T, #FF7700) >>  {
+    }
+    class bbolt.txid << (T, #FF7700) >>  {
+    }
+    class bbolt.txsById << (T, #FF7700) >>  {
+    }
+    class bbolt.walkFunc << (T, #FF7700) >>  {
+    }
+    class branchPageElement << (S,Aquamarine) >> {
+        - pos uint32
+        - ksize uint32
+        - pgid pgid
+
+        - key() []byte
+
+    }
+    class bucket << (S,Aquamarine) >> {
+        - root pgid
+        - sequence uint64
+
+    }
+    class call << (S,Aquamarine) >> {
+        - fn <font color=blue>func</font>(*Tx) error
+        - err <font color=blue>chan</font> error
+
+    }
+    class elemRef << (S,Aquamarine) >> {
+        - page *page
+        - node *node
+        - index int
+
+        - isLeaf() bool
+        - count() int
+
+    }
+    class freelist << (S,Aquamarine) >> {
+        - freelistType FreelistType
+        - ids []pgid
+        - allocs <font color=blue>map</font>[pgid]txid
+        - pending <font color=blue>map</font>[txid]*txPending
+        - cache <font color=blue>map</font>[pgid]<font color=blue>struct</font>{}
+        - freemaps <font color=blue>map</font>[uint64]pidSet
+        - forwardMap <font color=blue>map</font>[pgid]uint64
+        - backwardMap <font color=blue>map</font>[pgid]uint64
+        - allocate <font color=blue>func</font>(txid, int) pgid
+        - free_count <font color=blue>func</font>() int
+        - mergeSpans <font color=blue>func</font>(pgids) 
+        - getFreePageIDs <font color=blue>func</font>() []pgid
+        - readIDs <font color=blue>func</font>([]pgid) 
+
+        - size() int
+        - count() int
+        - arrayFreeCount() int
+        - pending_count() int
+        - copyall(dst []pgid) 
+        - arrayAllocate(txid txid, n int) pgid
+        - free(txid txid, p *page) 
+        - release(txid txid) 
+        - releaseRange(begin txid, end txid) 
+        - rollback(txid txid) 
+        - freed(pgid pgid) bool
+        - read(p *page) 
+        - arrayReadIDs(ids []pgid) 
+        - arrayGetFreePageIDs() []pgid
+        - write(p *page) error
+        - reload(p *page) 
+        - noSyncReload(pgids []pgid) 
+        - reindex() 
+        - arrayMergeSpans(ids pgids) 
+        - hashmapFreeCount() int
+        - hashmapAllocate(txid txid, n int) pgid
+        - hashmapReadIDs(pgids []pgid) 
+        - hashmapGetFreePageIDs() []pgid
+        - hashmapMergeSpans(ids pgids) 
+        - mergeWithExistingSpan(pid pgid) 
+        - addSpan(start pgid, size uint64) 
+        - delSpan(start pgid, size uint64) 
+        - init(pgids []pgid) 
+
+    }
+    class inode << (S,Aquamarine) >> {
+        - flags uint32
+        - pgid pgid
+        - key []byte
+        - value []byte
+
+    }
+    class leafPageElement << (S,Aquamarine) >> {
+        - flags uint32
+        - pos uint32
+        - ksize uint32
+        - vsize uint32
+
+        - key() []byte
+        - value() []byte
+
+    }
+    class meta << (S,Aquamarine) >> {
+        - magic uint32
+        - version uint32
+        - pageSize uint32
+        - flags uint32
+        - root bucket
+        - freelist pgid
+        - pgid pgid
+        - txid txid
+        - checksum uint64
+
+        - validate() error
+        - copy(dest *meta) 
+        - write(p *page) 
+        - sum64() uint64
+
+    }
+    class node << (S,Aquamarine) >> {
+        - bucket *Bucket
+        - isLeaf bool
+        - unbalanced bool
+        - spilled bool
+        - key []byte
+        - pgid pgid
+        - parent *node
+        - children nodes
+        - inodes inodes
+
+        - root() *node
+        - minKeys() int
+        - size() int
+        - sizeLessThan(v uintptr) bool
+        - pageElementSize() uintptr
+        - childAt(index int) *node
+        - childIndex(child *node) int
+        - numChildren() int
+        - nextSibling() *node
+        - prevSibling() *node
+        - put(oldKey []byte, newKey []byte, value []byte, pgid pgid, flags uint32) 
+        - del(key []byte) 
+        - read(p *page) 
+        - write(p *page) 
+        - split(pageSize uintptr) []*node
+        - splitTwo(pageSize uintptr) (*node, *node)
+        - splitIndex(threshold int) (uintptr, uintptr)
+        - spill() error
+        - rebalance() 
+        - removeChild(target *node) 
+        - dereference() 
+        - free() 
+
+    }
+    class nodes << (S,Aquamarine) >> {
+        + Len() int
+        + Swap(i int, j int) 
+        + Less(i int, j int) bool
+
+    }
+    class page << (S,Aquamarine) >> {
+        - id pgid
+        - flags uint16
+        - count uint16
+        - overflow uint32
+
+        - typ() string
+        - meta() *meta
+        - fastCheck(id pgid) 
+        - leafPageElement(index uint16) *leafPageElement
+        - leafPageElements() []leafPageElement
+        - branchPageElement(index uint16) *branchPageElement
+        - branchPageElements() []branchPageElement
+        - hexdump(n int) 
+
+    }
+    class pages << (S,Aquamarine) >> {
+        + Len() int
+        + Swap(i int, j int) 
+        + Less(i int, j int) bool
+
+    }
+    class panicked << (S,Aquamarine) >> {
+        - reason <font color=blue>interface</font>{}
+
+        + Error() string
+
+    }
+    class pgids << (S,Aquamarine) >> {
+        - merge(b pgids) pgids
+
+        + Len() int
+        + Swap(i int, j int) 
+        + Less(i int, j int) bool
+
+    }
+    class txPending << (S,Aquamarine) >> {
+        - ids []pgid
+        - alloctx []txid
+        - lastReleaseBegin txid
+
+    }
+    class txsById << (S,Aquamarine) >> {
+        + Len() int
+        + Swap(i int, j int) 
+        + Less(i int, j int) bool
+
+    }
+}
+"bbolt.bucket" *-- "bbolt.Bucket"
+
+
+"__builtin__.string" #.. "bbolt.FreelistType"
+"__builtin__.uint64" #.. "bbolt.pgid"
+"__builtin__.uint64" #.. "bbolt.txid"
+"bbolt.<font color=blue>func</font>([][]byte, []byte, []byte, uint64) error" #.. "bbolt.walkFunc"
+"bbolt.<font color=blue>map</font>[pgid]<font color=blue>struct</font>{}" #.. "bbolt.pidSet"
+"bbolt.[]*Tx" #.. "bbolt.txsById"
+"bbolt.[]*node" #.. "bbolt.nodes"
+"bbolt.[]*page" #.. "bbolt.pages"
+"bbolt.[]inode" #.. "bbolt.inodes"
+"bbolt.[]pgid" #.. "bbolt.pgids"
+@enduml

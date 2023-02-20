@@ -41,6 +41,7 @@ type meta struct {
 }
 
 // Ensure that a database can be opened without error.
+// 确保一个数据库可以没有错误的打开
 func TestOpen(t *testing.T) {
 	path := tempfile()
 	defer os.RemoveAll(path)
@@ -86,6 +87,8 @@ func TestOpen_MultipleGoroutines(t *testing.T) {
 					errCh <- err
 					return
 				}
+				//fmt.Println(db.Path())
+
 				if err := db.Close(); err != nil {
 					errCh <- err
 					return

@@ -16,6 +16,7 @@ import (
 )
 
 // Ensure that a cursor can return a reference to the bucket that created it.
+// 确保cursor能返回创建它的bucket的引用
 func TestCursor_Bucket(t *testing.T) {
 	db := btesting.MustCreateDB(t)
 	if err := db.Update(func(tx *bolt.Tx) error {
@@ -162,7 +163,7 @@ func TestCursor_Delete(t *testing.T) {
 // Ensure that a Tx cursor can seek to the appropriate keys when there are a
 // large number of keys. This test also checks that seek will always move
 // forward to the next key.
-//
+// 确保当有大量的key的时候，事务游标能定位到合适的位置，
 // Related: https://github.com/boltdb/bolt/pull/187
 func TestCursor_Seek_Large(t *testing.T) {
 	db := btesting.MustCreateDB(t)

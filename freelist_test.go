@@ -13,6 +13,7 @@ import (
 const TestFreelistType = "TEST_FREELIST_TYPE"
 
 // Ensure that a page is added to a transaction's freelist.
+// 确保页添加到一个事务的空闲列表中
 func TestFreelist_free(t *testing.T) {
 	f := newTestFreelist()
 	f.free(100, &page{id: 12})
