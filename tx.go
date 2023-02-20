@@ -195,6 +195,8 @@ func (tx *Tx) Commit() error {
 		tx.stats.IncRebalanceTime(time.Since(startTime))
 	}
 
+	opgid := tx.meta.pgid
+
 	// spill data onto dirty pages.
 	// 复制脏数据到脏页
 	startTime = time.Now()
@@ -221,6 +223,14 @@ func (tx *Tx) Commit() error {
 		}
 	} else {
 		tx.meta.freelist = pgidNoFreelist
+	}
+
+	// If the high water mark has moved up then attempt to grow the database.
+	if tx.meta.pgid > opgid {
+		if err := tx.db.grow(int(tx.meta.pgid+1) * tx.db.pageSize); err != nil {
+			tx.rollback()
+			return err
+		}
 	}
 
 	// Write dirty pages to disk.
@@ -273,6 +283,7 @@ func (tx *Tx) Commit() error {
 func (tx *Tx) commitFreelist() error {
 	// Allocate new pages for the new free list. This will overestimate
 	// the size of the freelist but not underestimate the size (which would be bad).
+
 	opgid := tx.meta.pgid
 	// 为新页创建内存空间
 	p, err := tx.allocate((tx.db.freelist.size() / tx.db.pageSize) + 1)
@@ -285,13 +296,6 @@ func (tx *Tx) commitFreelist() error {
 		return err
 	}
 	tx.meta.freelist = p.id
-	// If the high water mark has moved up then attempt to grow the database.
-	if tx.meta.pgid > opgid {
-		if err := tx.db.grow(int(tx.meta.pgid+1) * tx.db.pageSize); err != nil {
-			tx.rollback()
-			return err
-		}
-	}
 
 	return nil
 }
@@ -337,6 +341,18 @@ func (tx *Tx) rollback() {
 			// Read free page list from freelist page.
 			// 从mate数据中恢复freelist
 			tx.db.freelist.reload(tx.db.page(tx.db.meta().freelist))
+		// When mmap fails, the `data`, `dataref` and `datasz` may be reset to
+		// zero values, and there is no way to reload free page IDs in this case.
+		if tx.db.data != nil {
+			if !tx.db.hasSyncedFreelist() {
+				// Reconstruct free page list by scanning the DB to get the whole free page list.
+				// Note: scaning the whole db is heavy if your db size is large in NoSyncFreeList mode.
+				tx.db.freelist.noSyncReload(tx.db.freepages())
+			} else {
+				// Read free page list from freelist page.
+				tx.db.freelist.reload(tx.db.page(tx.db.meta().freelist))
+			}
+
 		}
 	}
 	tx.close()
@@ -461,6 +477,7 @@ func (tx *Tx) CopyFile(path string, mode os.FileMode) error {
 	return f.Close()
 }
 
+
 // Check performs several consistency checks on the database for this transaction.
 // An error is returned if any inconsistency is found.
 //
@@ -554,6 +571,7 @@ func (tx *Tx) checkBucket(b *Bucket, reachable map[pgid]*page, freed map[pgid]bo
 		return nil
 	})
 }
+
 
 // allocate returns a contiguous block of memory starting at a given page.
 // 根据当前事务返回一个连续的内存块
@@ -720,6 +738,10 @@ func (tx *Tx) Page(id int) (*PageInfo, error) {
 		return nil, ErrTxClosed
 	} else if pgid(id) >= tx.meta.pgid {
 		return nil, nil
+	}
+
+	if tx.db.freelist == nil {
+		return nil, ErrFreePagesNotLoaded
 	}
 
 	// Build the page info.

@@ -116,8 +116,11 @@ func munmap(db *DB) error {
 
 	// 调用dll库里面的函数
 	addr := (uintptr)(unsafe.Pointer(&db.data[0]))
+	var err1 error
 	if err := syscall.UnmapViewOfFile(addr); err != nil {
-		return os.NewSyscallError("UnmapViewOfFile", err)
+		err1 = os.NewSyscallError("UnmapViewOfFile", err)
 	}
-	return nil
+	db.data = nil
+	db.datasz = 0
+	return err1
 }

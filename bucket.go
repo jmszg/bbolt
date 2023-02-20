@@ -606,8 +606,8 @@ func (b *Bucket) forEachPageNode(fn func(*page, *node, int)) {
 	b._forEachPageNode(b.root, 0, fn)
 }
 
-func (b *Bucket) _forEachPageNode(pgid pgid, depth int, fn func(*page, *node, int)) {
-	var p, n = b.pageNode(pgid)
+func (b *Bucket) _forEachPageNode(pgId pgid, depth int, fn func(*page, *node, int)) {
+	var p, n = b.pageNode(pgId)
 
 	// Execute function.
 	fn(p, n, depth)
@@ -777,7 +777,8 @@ func (b *Bucket) node(pgid pgid, parent *node) *node {
 
 	// Retrieve node if it's already been created.
 	// 如果已经创建了索引节点则返回该节点
-	if n := b.nodes[pgid]; n != nil {
+	if n := b.nodes[pgId]; n != nil {
+
 		return n
 	}
 
@@ -794,14 +795,15 @@ func (b *Bucket) node(pgid pgid, parent *node) *node {
 	// 如果当前桶是一个内敛桶则使用桶相关的内敛页
 	var p = b.page
 	if p == nil {
+
 		// 如果没有内敛页，从当期事务中去查找
-		p = b.tx.page(pgid)
+		p = b.tx.page(pgId)
 	}
 
 	// Read the page into the node and cache it.
 	// 读取页中的值初始化node并缓存当前节点
 	n.read(p)
-	b.nodes[pgid] = n
+	b.nodes[pgId] = n
 
 	// Update statistics.
 	// 更新事务节点数信息

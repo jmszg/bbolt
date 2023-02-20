@@ -92,7 +92,7 @@ type DB struct {
 	NoFreelistSync bool
 
 	// FreelistType sets the backend freelist type. There are two options. Array which is simple but endures
-	// dramatic performance degradation if database is large and framentation in freelist is common.
+	// dramatic performance degradation if database is large and fragmentation in freelist is common.
 	// The alternative one is using hashmap, it is faster in almost all circumstances
 	// but it doesn't guarantee that it offers the smallest page id available. In normal case it is safe.
 	// The default type is array
@@ -105,6 +105,11 @@ type DB struct {
 	//
 	// https://github.com/boltdb/bolt/issues/284
 	NoGrowSync bool
+
+	// When `true`, bbolt will always load the free pages when opening the DB.
+	// When opening db in write mode, this flag will always automatically
+	// set to `true`.
+	PreLoadFreelist bool
 
 	// If you want to read the entire database fast, you can set MmapFlag to
 	// syscall.MAP_POPULATE on Linux 2.6.23+ for sequential read-ahead.
@@ -227,6 +232,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	db.NoGrowSync = options.NoGrowSync
 	db.MmapFlags = options.MmapFlags
 	db.NoFreelistSync = options.NoFreelistSync
+	db.PreLoadFreelist = options.PreLoadFreelist
 	db.FreelistType = options.FreelistType
 	db.Mlock = options.Mlock
 
@@ -241,6 +247,9 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	if options.ReadOnly {
 		flag = os.O_RDONLY
 		db.readOnly = true
+	} else {
+		// always load free pages in write mode
+		db.PreLoadFreelist = true
 	}
 
 	// 注册openfile函数
@@ -323,9 +332,14 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 		return nil, err
 	}
 
+	if db.PreLoadFreelist {
+		db.loadFreelist()
+	}
+
 	if db.readOnly {
 		return db, nil
 	}
+
 
 	// 加载空闲列表
 	db.loadFreelist()
@@ -515,7 +529,12 @@ func (db *DB) mmap(minsz int) error {
 	}
 
 	// Memory-map the data file as a byte slice.
+
 	// 将数据文件内存映射为字节切片
+
+	// gofail: var mapError string
+	// return errors.New(mapError)
+
 	if err := mmap(db, size); err != nil {
 		return err
 	}
@@ -546,12 +565,26 @@ func (db *DB) mmap(minsz int) error {
 	return nil
 }
 
+func (db *DB) invalidate() {
+	db.dataref = nil
+	db.data = nil
+	db.datasz = 0
+
+	db.meta0 = nil
+	db.meta1 = nil
+}
+
 // munmap unmaps the data file from memory.
 // 从文件中取消映射指针
 func (db *DB) munmap() error {
+	defer db.invalidate()
+
+	// gofail: var unmapError string
+	// return errors.New(unmapError)
 	if err := munmap(db); err != nil {
 		return fmt.Errorf("unmap error: " + err.Error())
 	}
+
 	return nil
 }
 
@@ -713,10 +746,11 @@ func (db *DB) close() error {
 	// 清除写钩子函数
 	db.ops.writeAt = nil
 
+	var errs []error
 	// Close the mmap.
 	// 关闭mmap
 	if err := db.munmap(); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 
 	// Close file handles.
@@ -727,19 +761,23 @@ func (db *DB) close() error {
 			// Unlock the file.
 			// 释放文件锁
 			if err := funlock(db); err != nil {
-				return fmt.Errorf("bolt.Close(): funlock error: %w", err)
+				errs = append(errs, fmt.Errorf("bolt.Close(): funlock error: %w", err))
 			}
 		}
 
 		// Close the file descriptor.
 		// 关闭文件句柄
 		if err := db.file.Close(); err != nil {
-			return fmt.Errorf("db file close: %s", err)
+			errs = append(errs, fmt.Errorf("db file close: %w", err))
 		}
 		db.file = nil
 	}
 
 	db.path = ""
+
+	if len(errs) > 0 {
+		return errs[0]
+	}
 	return nil
 }
 
@@ -790,6 +828,13 @@ func (db *DB) beginTx() (*Tx, error) {
 		return nil, ErrDatabaseNotOpen
 	}
 
+	// Exit if the database is not correctly mapped.
+	if db.data == nil {
+		db.mmaplock.RUnlock()
+		db.metalock.Unlock()
+		return nil, ErrInvalidMapping
+	}
+
 	// Create a transaction associated with the database.
 	// 创建数据库的事务
 	t := &Tx{}
@@ -838,6 +883,12 @@ func (db *DB) beginRWTx() (*Tx, error) {
 	if !db.opened {
 		db.rwlock.Unlock()
 		return nil, ErrDatabaseNotOpen
+	}
+
+	// Exit if the database is not correctly mapped.
+	if db.data == nil {
+		db.rwlock.Unlock()
+		return nil, ErrInvalidMapping
 	}
 
 	// Create a transaction associated with the database.
@@ -1170,6 +1221,7 @@ func (db *DB) Stats() Stats {
 // carefully, or not at all.
 // 从C游标内访问原始字节
 func (db *DB) Info() *Info {
+	_assert(db.data != nil, "database file isn't correctly mapped")
 	return &Info{uintptr(unsafe.Pointer(&db.data[0])), db.pageSize}
 }
 
@@ -1263,8 +1315,9 @@ func (db *DB) grow(sz int) error {
 
 	// If the data is smaller than the alloc size then only allocate what's needed.
 	// Once it goes over the allocation size then allocate in chunks.
+
 	// 如果数据小于分配的大小，则只分配需要分配的大小，一旦它超过分配的大小，然后分块分配
-	if db.datasz < db.AllocSize {
+	if db.datasz <= db.AllocSize {
 		sz = db.datasz
 	} else {
 		sz += db.AllocSize
@@ -1322,9 +1375,14 @@ func (db *DB) freepages() []pgid {
 			panic(fmt.Sprintf("freepages: failed to get all reachable pages (%v)", e))
 		}
 	}()
+
 	// 检查bucket
-	tx.checkBucket(&tx.root, reachable, nofreed, ech)
+
+	tx.checkBucket(&tx.root, reachable, nofreed, HexKVStringer(), ech)
+
 	close(ech)
+
+	// TODO: If check bucket reported any corruptions (ech) we shouldn't proceed to freeing the pages.
 
 	var fids []pgid
 	for i := pgid(2); i < db.meta().pgid; i++ {
@@ -1350,8 +1408,13 @@ type Options struct {
 	// under normal operation, but requires a full database re-sync during recovery.
 	NoFreelistSync bool
 
+	// PreLoadFreelist sets whether to load the free pages when opening
+	// the db file. Note when opening db in write mode, bbolt will always
+	// load the free pages.
+	PreLoadFreelist bool
+
 	// FreelistType sets the backend freelist type. There are two options. Array which is simple but endures
-	// dramatic performance degradation if database is large and framentation in freelist is common.
+	// dramatic performance degradation if database is large and fragmentation in freelist is common.
 	// The alternative one is using hashmap, it is faster in almost all circumstances
 	// but it doesn't guarantee that it offers the smallest page id available. In normal case it is safe.
 	// The default type is array

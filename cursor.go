@@ -216,14 +216,17 @@ func (c *Cursor) goToFirstElementOnTheStack() {
 		}
 
 		// Keep adding pages pointing to the first element to the stack.
+
 		// 添加页到遍历栈的第一个元素
-		var pgid pgid
+
+		var pgId pgid
+
 		if ref.node != nil {
-			pgid = ref.node.inodes[ref.index].pgid
+			pgId = ref.node.inodes[ref.index].pgid
 		} else {
-			pgid = ref.page.branchPageElement(uint16(ref.index)).pgid
+			pgId = ref.page.branchPageElement(uint16(ref.index)).pgid
 		}
-		p, n := c.bucket.pageNode(pgid)
+		p, n := c.bucket.pageNode(pgId)
 		c.stack = append(c.stack, elemRef{page: p, node: n, index: 0})
 	}
 }
@@ -240,14 +243,17 @@ func (c *Cursor) last() {
 		}
 
 		// Keep adding pages pointing to the last element in the stack.
+
 		// 根据pgid获取页或者节点
-		var pgid pgid
+
+		var pgId pgid
+
 		if ref.node != nil {
-			pgid = ref.node.inodes[ref.index].pgid
+			pgId = ref.node.inodes[ref.index].pgid
 		} else {
-			pgid = ref.page.branchPageElement(uint16(ref.index)).pgid
+			pgId = ref.page.branchPageElement(uint16(ref.index)).pgid
 		}
-		p, n := c.bucket.pageNode(pgid)
+		p, n := c.bucket.pageNode(pgId)
 
 		// 遍历栈中追加查找到的元素
 		var nextRef = elemRef{page: p, node: n}
@@ -332,11 +338,13 @@ func (c *Cursor) prev() (key []byte, value []byte, flags uint32) {
 }
 
 // search recursively performs a binary search against a given page/node until it finds a given key.
+
 // 对给定的页/节点递归的进行二分查找直到发现给定的key
 func (c *Cursor) search(key []byte, pgid pgid) {
 	// 根据页id查找页
 	p, n := c.bucket.pageNode(pgid)
 	// 如果查找到页，校验页类型的合法性
+	p, n := c.bucket.pageNode(pgId)
 	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 {
 		panic(fmt.Sprintf("invalid page type: %d: %x", p.id, p.flags))
 	}

@@ -298,9 +298,12 @@ func (f *freelist) rollback(txid txid) {
 }
 
 // freed returns whether a given page is in the free list.
+
 // 返回一个页是否在空闲列表中
-func (f *freelist) freed(pgid pgid) bool {
-	_, ok := f.cache[pgid]
+
+func (f *freelist) freed(pgId pgid) bool {
+	_, ok := f.cache[pgId]
+
 	return ok
 }
 
