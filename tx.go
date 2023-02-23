@@ -79,6 +79,7 @@ func (tx *Tx) init(db *DB) {
 	// Increment the transaction id and add a page cache for writable transactions.
 	// 如果为可写事务，创建页指针缓存，设置事务元数据的事务id
 	if tx.writable {
+		// 创建事务的页缓存空间
 		tx.pages = make(map[pgid]*page)
 		tx.meta.txid += txid(1)
 	}

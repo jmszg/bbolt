@@ -109,6 +109,7 @@ type DB struct {
 	// When `true`, bbolt will always load the free pages when opening the DB.
 	// When opening db in write mode, this flag will always automatically
 	// set to `true`.
+	// 为true时，打开db，需要加载空闲列表
 	PreLoadFreelist bool
 
 	// If you want to read the entire database fast, you can set MmapFlag to
@@ -160,9 +161,11 @@ type DB struct {
 	meta1    *meta
 	pageSize int
 	opened   bool
-	rwtx     *Tx
-	txs      []*Tx
-	stats    Stats
+	// 数据库读写事务
+	rwtx *Tx
+	// 数据库事务集合
+	txs   []*Tx
+	stats Stats
 
 	// 空闲列表指针
 	freelist *freelist
@@ -249,6 +252,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 		db.readOnly = true
 	} else {
 		// always load free pages in write mode
+		//  写模式，更新预加载空闲列表标识
 		db.PreLoadFreelist = true
 	}
 
@@ -265,7 +269,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 		_ = db.close()
 		return nil, err
 	}
-	fmt.Println(db.file)
+
 	// 返回文件名称代表打开成功
 	db.path = db.file.Name()
 
@@ -326,26 +330,28 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	}
 
 	// Memory map the data file.
-	// 内存映射到文件数据
+	// 映射数据文件到内存
 	if err := db.mmap(options.InitialMmapSize); err != nil {
 		_ = db.close()
 		return nil, err
 	}
 
+	// 需要预加载空闲列表
 	if db.PreLoadFreelist {
 		db.loadFreelist()
 	}
 
+	// 只读模式则返回
 	if db.readOnly {
 		return db, nil
 	}
 
-
-	// 加载空闲列表
+	// 加载空闲列表，写模式必须加载空闲列表
 	db.loadFreelist()
 
 	// Flush freelist when transitioning from no sync to sync so
 	// NoFreelistSync unaware boltdb can open the db later.
+	// 当从无同步状态转换为同步状态时，刷新空闲列表，以便于不支持 NoFreelistSync 的 Boltdb 可以在以后打开数据库。
 	if !db.NoFreelistSync && !db.hasSyncedFreelist() {
 		tx, err := db.Begin(true)
 		if tx != nil {
@@ -483,11 +489,11 @@ func (db *DB) hasSyncedFreelist() bool {
 // minsz is the minimum size that the new mmap can be.
 // 打开底层内存映射文件并初始化元数据引用，minzs是mmap的最小值
 func (db *DB) mmap(minsz int) error {
-	// 读写锁进行加锁
+	// 读写锁进行写锁加锁，可以多个goroutine读，只允许一个goroutine写
 	db.mmaplock.Lock()
 	defer db.mmaplock.Unlock()
 
-	// 检查文件的状态信息，如果不符合要求则返回
+	// 检测文件，如果文件大小小于2个页的数据大小，则返回
 	info, err := db.file.Stat()
 	if err != nil {
 		return fmt.Errorf("mmap stat error: %s", err)
@@ -510,7 +516,7 @@ func (db *DB) mmap(minsz int) error {
 
 	if db.Mlock {
 		// Unlock db memory
-		// 释放数据库锁
+		// 释放数据库文件锁
 		if err := db.munlock(fileSize); err != nil {
 			return err
 		}
@@ -523,22 +529,21 @@ func (db *DB) mmap(minsz int) error {
 	}
 
 	// Unmap existing data before continuing.
-	// 在继续执行前取消现有的数据映射
+	// 在继续执行前取消现有的映射
 	if err := db.munmap(); err != nil {
 		return err
 	}
 
 	// Memory-map the data file as a byte slice.
-
 	// 将数据文件内存映射为字节切片
-
 	// gofail: var mapError string
 	// return errors.New(mapError)
-
+	// 进行数据库文件内存映射
 	if err := mmap(db, size); err != nil {
 		return err
 	}
 
+	// 锁住数据库文件
 	if db.Mlock {
 		// Don't allow swapping of data file
 		// 不允许交换数据文件
@@ -548,7 +553,7 @@ func (db *DB) mmap(minsz int) error {
 	}
 
 	// Save references to the meta pages.
-	// 保存meta页的空间地址
+	// 重新保存数据的mate页的引用
 	db.meta0 = db.page(0).meta()
 	db.meta1 = db.page(1).meta()
 
@@ -657,6 +662,7 @@ func (db *DB) mrelock(fileSizeFrom, fileSizeTo int) error {
 
 // init creates a new database file and initializes its meta pages.
 // 初始化一个数据库文件并初始化它的元数据页
+// 初始化数据，创建了4个page，前两个为meta page，第三个为freelistpage，第四个为叶子节点页，并将数据写入文件
 func (db *DB) init() error {
 	// Create two meta pages on a buffer.
 	// 在缓存中创建两个元数据页
@@ -694,11 +700,11 @@ func (db *DB) init() error {
 	p.count = 0
 
 	// Write the buffer to our data file.
-	// 把缓存数据写到数据文件中
+	// 把初始化好的buf数据写到数据文件中
 	if _, err := db.ops.writeAt(buf, 0); err != nil {
 		return err
 	}
-	// 刷新缓存数据
+	// 强制数据写入磁盘
 	if err := fdatasync(db); err != nil {
 		return err
 	}
@@ -869,12 +875,12 @@ func (db *DB) beginRWTx() (*Tx, error) {
 
 	// Obtain writer lock. This is released by the transaction when it closes.
 	// This enforces only one writer transaction at a time.
-	// 开启事务读写锁
+	// 开启事务读写锁的写锁，可以多个协程读，只允许一个协程写
 	db.rwlock.Lock()
 
 	// Once we have the writer lock then we can lock the meta pages so that
 	// we can set up the transaction.
-	// 开启元数据页锁
+	// 开启元数据页互斥锁，只允许一个协程访问
 	db.metalock.Lock()
 	defer db.metalock.Unlock()
 
@@ -894,9 +900,11 @@ func (db *DB) beginRWTx() (*Tx, error) {
 	// Create a transaction associated with the database.
 	// 创建一个数据库相关的可读写的事务
 	t := &Tx{writable: true}
-	// 初始化数据库
+	// 初始化数据库的事务
 	t.init(db)
+	// 更新当前数据库的读写事务
 	db.rwtx = t
+	// 释放所有关闭只读事务的pending页
 	db.freePages()
 	return t, nil
 }

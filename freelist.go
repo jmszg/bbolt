@@ -220,6 +220,8 @@ func (f *freelist) release(txid txid) {
 		if tid <= txid {
 			// Move transaction's pending pages to the available freelist.
 			// Don't remove from the cache since the page is still free.
+			// pending页移到freelist
+			// 删除pending中的缓存页id
 			m = append(m, txp.ids...)
 			delete(f.pending, tid)
 		}

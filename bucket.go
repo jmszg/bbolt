@@ -256,6 +256,7 @@ func (b *Bucket) CreateBucket(key []byte) (*Bucket, error) {
 // CreateBucketIfNotExists creates a new bucket if it doesn't already exist and returns a reference to it.
 // Returns an error if the bucket name is blank, or if the bucket name is too long.
 // The bucket instance is only valid for the lifetime of the transaction.
+// 如果桶不存在，创建一个桶，这个桶的实例只在事务的周期内有效
 func (b *Bucket) CreateBucketIfNotExists(key []byte) (*Bucket, error) {
 	child, err := b.CreateBucket(key)
 	if err == ErrBucketExists {
