@@ -772,7 +772,7 @@ func (b *Bucket) rebalance() {
 
 // node creates a node from a page and associates it with a given parent.
 // 根据相关的父节点创建一个页id为pgid的子节点
-func (b *Bucket) node(pgid pgid, parent *node) *node {
+func (b *Bucket) node(pgId pgid, parent *node) *node {
 	_assert(b.nodes != nil, "nodes map expected")
 
 	// Retrieve node if it's already been created.

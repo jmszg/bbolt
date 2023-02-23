@@ -340,11 +340,10 @@ func (c *Cursor) prev() (key []byte, value []byte, flags uint32) {
 // search recursively performs a binary search against a given page/node until it finds a given key.
 
 // 对给定的页/节点递归的进行二分查找直到发现给定的key
-func (c *Cursor) search(key []byte, pgid pgid) {
+func (c *Cursor) search(key []byte, pgId pgid) {
 	// 根据页id查找页
-	p, n := c.bucket.pageNode(pgid)
-	// 如果查找到页，校验页类型的合法性
 	p, n := c.bucket.pageNode(pgId)
+	// 如果查找到页，校验页类型的合法性
 	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 {
 		panic(fmt.Sprintf("invalid page type: %d: %x", p.id, p.flags))
 	}
